@@ -153,5 +153,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 089700f4b9392be4c91da0d70ef1d8b0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ResourceSwitch
+  isDynamic: 0
   speedThreshold: 0.05
-  requiredStableTime: 0.5
+  requiredStableTime: 1.5

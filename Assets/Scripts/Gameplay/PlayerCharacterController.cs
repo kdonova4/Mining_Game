@@ -300,11 +300,11 @@ namespace Dono.MiningGame.Gameplay
                     // jumping
                     if (IsGrounded && m_InputHandler.GetJumpInputDown())
                     {
-                        Debug.Log("HERE");
+                        
                         // force the crouch state to false
                         if (SetCrouchingState(false, false))
                         {
-                            Debug.Log("HERE AGAIN");
+                            
                             // start by canceling out the vertical component of our velocity
                             CharacterVelocity = new Vector3(CharacterVelocity.x, 0f, CharacterVelocity.z);
 

@@ -17,7 +17,7 @@ namespace Dono.MiningGame.Game
             WeaponShoot,
             WeaponOverheat,
             WeaponChargeBuildup,
-            WeaponChargeLoop,
+            ToolChargeLoop,
             HUDVictory,
             HUDObjective,
             EnemyAttack
