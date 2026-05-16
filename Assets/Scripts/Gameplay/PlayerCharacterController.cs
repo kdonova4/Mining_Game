@@ -361,8 +361,9 @@ namespace Dono.MiningGame.Gameplay
 
             // detect obstructions to adjust velocity accordingly
             m_LasterstImpactSpeed = Vector3.zero;
+            int ignoreMask = ~LayerMask.GetMask("Held");
             if (Physics.CapsuleCast(capsuleBottomBeforeMove, capsuleTopBeforeMove, m_Controller.radius,
-                CharacterVelocity.normalized, out RaycastHit hit, CharacterVelocity.magnitude * Time.deltaTime, -1,
+                CharacterVelocity.normalized, out RaycastHit hit, CharacterVelocity.magnitude * Time.deltaTime, ignoreMask,
                 QueryTriggerInteraction.Ignore))
             {
                 // We remember the last impact speed because the fall damagelogic might need it

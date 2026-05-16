@@ -1,5 +1,6 @@
 using Dono.MiningGame.Game;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
@@ -125,6 +126,12 @@ namespace Dono.MiningGame.Gameplay
         [Tooltip("Mining Manager")]
         public MiningManager MiningManager;
 
+        [Tooltip("Max items allowed to be held by tool")]
+        public int MaxItemsHeld = 10;
+
+        [Tooltip("Where Resources/Items will be held")]
+        public GameObject PickupRoot;
+
         public LineRenderer LineRenderer;
 
         PlayerCharacterController m_PlayerCharacterController;
@@ -150,15 +157,23 @@ namespace Dono.MiningGame.Gameplay
         Quaternion m_ToolLocalRotation;
         Vector3 m_ToolJumpImpulseLocalPosition;
         Vector3 m_ToolLandImpulseLocalPosition;
+        Quaternion m_ToolOverheatedLocalRotation;
         bool m_WasShooting;
         bool m_IsReturning;
         bool m_Landing;
+        float m_PushForce;
+        float m_ChargeTime = 1f;
+        float m_MaxCharge = 1f;
+        float m_ChargeSpeed = 1f;
+        float m_LastReleasedForce;
+        bool m_JustPushed = false;
 
         void Awake()
         {
             m_BeamDirection = ToolCamera.transform.forward;
             m_ToolMainLocalPosition = ParentTransform.localPosition;
             m_ToolLocalRotation = ParentTransform.localRotation;
+            m_ToolOverheatedLocalRotation = ParentTransform.localRotation;
             m_MineTimer = MineRate;
             m_IsShooting = false;
             m_IsOverheated = false;
@@ -203,7 +218,9 @@ namespace Dono.MiningGame.Gameplay
         // Update is called once per frame
         void Update()
         {
-
+            m_JustPushed = m_InputHandler.GetFireInputDown() && m_InputHandler.GetAimInputHeld();
+            HandlePushCharge();
+            HandleTractorBeam();
             if (Physics.Raycast(ToolCamera.transform.position, ToolCamera.transform.forward, out RaycastHit hit, 1000000f))
             {
                 m_MineTarget = hit.point;
@@ -223,10 +240,13 @@ namespace Dono.MiningGame.Gameplay
                 m_AccumulatedRecoil += Vector3.back * RecoilForce;
                 m_AccumulatedRecoil = Vector3.ClampMagnitude(m_AccumulatedRecoil, MaxRecoilDistance);
             }
+
+
         }
 
         void LateUpdate()
         {
+            HandleOverheatPose();
             HandleJumpImpulse();
             HandleJumpLandImpulse();
             HandleWeaponSway();
@@ -235,15 +255,20 @@ namespace Dono.MiningGame.Gameplay
             HandleBeamRender();
             ParentTransform.localPosition = m_ToolMainLocalPosition + m_SwayLocalPosition + m_ToolBobLocalPosition + m_ToolRecoilLocalPosition
                 + m_ToolJumpImpulseLocalPosition + m_ToolLandImpulseLocalPosition;
-            ParentTransform.localRotation = m_ToolLocalRotation * m_SwayLocalRotation;
-            
+            ParentTransform.localRotation = m_ToolLocalRotation * m_SwayLocalRotation * m_ToolOverheatedLocalRotation;
+
             //Debug.Log(ParentTransform.localPosition);
             //.Log(m_ToolRecoilLocalPosition);
         }
 
+        void FixedUpdate()
+        {
+
+        }
+
         void HandleInput()
         {
-            bool wantsToShoot = m_InputHandler.GetFireInputHeld();
+            bool wantsToShoot = m_InputHandler.GetFireInputHeld() && !m_InputHandler.GetAimInputHeld();
 
 
             if (wantsToShoot && !m_IsOverheated)
@@ -327,7 +352,7 @@ namespace Dono.MiningGame.Gameplay
                         {
 
                             int amountMined = MiningManager.MineResult();
-                            resourceSpawner.SpawnResource(amountMined);
+                            resourceSpawner.SpawnOre(amountMined);
                             //Debug.Log("MINE");
                         }
                         else
@@ -361,6 +386,8 @@ namespace Dono.MiningGame.Gameplay
             }
         }
 
+
+
         void HandleBeamRender()
         {
             if (!m_IsShooting)
@@ -374,7 +401,7 @@ namespace Dono.MiningGame.Gameplay
 
             Vector3 start = TipOfTool.position;
 
-            float beamResponsiveness = 5f;
+            float beamResponsiveness = 15f;
 
             Vector3 cameraDir = ToolCamera.transform.forward;
 
@@ -449,7 +476,7 @@ namespace Dono.MiningGame.Gameplay
             float rotateX = -mouseY * RotationAmount;
             float rotateY = -mouseX * RotationAmount;
 
-          
+
 
             moveX = Mathf.Clamp(moveX, -MaxSway, MaxSway);
             moveY = Mathf.Clamp(moveY, -MaxSway, MaxSway);
@@ -466,12 +493,28 @@ namespace Dono.MiningGame.Gameplay
             m_SwayLocalPosition = Vector3.Lerp(m_SwayLocalPosition, targetSwayPos, SwaySmoothing * Time.deltaTime);
         }
 
+        void HandleOverheatPose()
+        {
+            if (m_IsOverheated)
+            {
+                Vector3 targetRotation = new Vector3(0, -10, -10);
+
+                Quaternion targetQaut = Quaternion.Euler(targetRotation);
+
+                m_ToolOverheatedLocalRotation = Quaternion.Lerp(m_ToolOverheatedLocalRotation, targetQaut, RotationSpeed * Time.deltaTime);
+            }
+            else
+            {
+                m_ToolOverheatedLocalRotation = Quaternion.Lerp(m_ToolOverheatedLocalRotation, Quaternion.Euler(Vector3.zero), RotationSpeed * Time.deltaTime);
+            }
+        }
+
         bool m_IsFalling;
 
         void HandleJumpImpulse()
         {
-            
-            if(!m_PlayerCharacterController.IsGrounded && !m_IsFalling)
+
+            if (!m_PlayerCharacterController.IsGrounded && !m_IsFalling)
             {
                 m_Landing = true;
             }
@@ -523,6 +566,191 @@ namespace Dono.MiningGame.Gameplay
             {
                 m_JumpTarget = Vector3.zero;
             }
+        }
+
+        Dictionary<Rigidbody, ConfigurableJoint> heldBodies = new Dictionary<Rigidbody, ConfigurableJoint>();
+        float m_GrabCooldownTime = 0.0f;
+        void HandleTractorBeam()
+        {
+
+            bool IsAiming = m_InputHandler.GetAimInputHeld();
+
+            if (m_GrabCooldownTime > 0)
+            {
+                m_GrabCooldownTime -= Time.deltaTime;
+            }
+
+            if (m_JustPushed && heldBodies.Count > 0)
+            {
+                ReleaseAndPush();
+                m_GrabCooldownTime = 0.5f;
+                return;
+            }
+
+            if (IsAiming && m_GrabCooldownTime <= 0 && !m_IsOverheated)
+            {
+
+                Collider[] hitColliders = Physics.OverlapCapsule(ToolCamera.transform.position, ToolCamera.transform.position + (ToolCamera.transform.forward * 1.5f), .5f);
+
+                foreach (var hitCollider in hitColliders)
+                {
+                    Rigidbody rb = hitCollider.GetComponent<Rigidbody>();
+
+                    if (rb != null && heldBodies.GetValueOrDefault(rb) == null && heldBodies.Count < MaxItemsHeld)
+                    {
+                        hitCollider.gameObject.layer = LayerMask.NameToLayer("Held");
+                        rb.useGravity = false;
+
+                        ConfigurableJoint newJoint = CreateJoint(rb);
+                        heldBodies.Add(rb, newJoint);
+
+                    }
+                }
+            }
+            else if (!IsAiming && heldBodies.Count > 0)
+            {
+                ReleaseAndDrop();
+            }
+        }
+
+        void ReleaseAndDrop()
+        {
+            foreach (KeyValuePair<Rigidbody, ConfigurableJoint> pair in heldBodies)
+            {
+                Rigidbody rb = pair.Key;
+                if (pair.Value != null)
+                {
+                    pair.Value.connectedBody = null;
+                    Destroy(pair.Value);
+                }
+                if (rb != null)
+                {
+                    rb.gameObject.layer = LayerMask.NameToLayer("Resource");
+                    rb.useGravity = true;
+                    rb.linearVelocity = Vector3.ClampMagnitude(rb.linearVelocity, 10f);
+                }
+
+            }
+            heldBodies.Clear();
+        }
+
+
+        // Separate these into methods to keep your code readable!
+        void ReleaseAndPush()
+        {
+
+            foreach (KeyValuePair<Rigidbody, ConfigurableJoint> pair in heldBodies)
+            {
+
+                Rigidbody rb = pair.Key;
+                if (pair.Value != null)
+                {
+                    pair.Value.connectedBody = null;
+                    Destroy(pair.Value);
+                }
+
+                if (rb != null)
+                {
+                    rb.gameObject.layer = LayerMask.NameToLayer("Resource");
+                    rb.useGravity = true;
+                    rb.linearVelocity = Vector3.zero;
+                    rb.AddForce(TipOfTool.transform.forward * (m_LastReleasedForce * 10f), ForceMode.VelocityChange);
+                }
+
+            }
+            heldBodies.Clear();
+        }
+
+        ConfigurableJoint CreateJoint(Rigidbody rb)
+        {
+            // Configure and create joint
+            ConfigurableJoint joint = PickupRoot.AddComponent<ConfigurableJoint>();
+
+            joint.connectedBody = rb;
+
+            joint.autoConfigureConnectedAnchor = false;
+
+
+            Vector3 connectedAnchor = new Vector3(UnityEngine.Random.Range(-.5f, .5f), UnityEngine.Random.Range(-.5f, .5f), UnityEngine.Random.Range(-.5f, .5f));
+            joint.anchor = Vector3.zero;
+            joint.connectedAnchor = Vector3.zero;
+
+
+            joint.xMotion = ConfigurableJointMotion.Limited;
+            joint.yMotion = ConfigurableJointMotion.Limited;
+            joint.zMotion = ConfigurableJointMotion.Limited;
+            joint.angularXMotion = ConfigurableJointMotion.Free;
+            joint.angularYMotion = ConfigurableJointMotion.Free;
+            joint.angularZMotion = ConfigurableJointMotion.Free;
+
+            var linearLimitSpring = joint.linearLimitSpring;
+            linearLimitSpring.spring = 0f;
+            linearLimitSpring.damper = 5f;
+            joint.linearLimitSpring = linearLimitSpring;
+
+            var linearLimit = joint.linearLimit;
+            linearLimit.limit = .1f;
+            linearLimit.bounciness = 0;
+            linearLimit.contactDistance = 0.01f;
+            joint.linearLimit = linearLimit;
+
+
+
+            var xDrive = joint.xDrive;
+            xDrive.positionSpring = UnityEngine.Random.Range(300f, 350f);
+            xDrive.positionDamper = UnityEngine.Random.Range(40f, 150f);
+            xDrive.useAcceleration = true;
+            var yDrive = joint.yDrive;
+            yDrive.positionSpring = UnityEngine.Random.Range(300f, 450f);
+            yDrive.positionDamper = UnityEngine.Random.Range(40f, 150f);
+            yDrive.useAcceleration = true;
+            var zDrive = joint.zDrive;
+            zDrive.positionSpring = UnityEngine.Random.Range(300f, 450f);
+            zDrive.positionDamper = UnityEngine.Random.Range(5f, 8f);
+            zDrive.useAcceleration = true;
+
+            joint.xDrive = xDrive;
+            joint.yDrive = yDrive;
+            joint.zDrive = zDrive;
+
+            joint.rotationDriveMode = RotationDriveMode.Slerp;
+
+
+
+            joint.projectionMode = JointProjectionMode.PositionAndRotation;
+
+            return joint;
+        }
+
+
+        void HandlePushCharge()
+        {
+            if (m_JustPushed)
+            {
+
+                m_LastReleasedForce = 1f;
+            }
+        }
+
+        private void OnDrawGizmos()
+        {
+            if (ToolCamera == null) return;
+            Gizmos.color = Color.blue;
+            Vector3 p1 = ToolCamera.transform.position;
+            Vector3 p2 = ToolCamera.transform.position + (ToolCamera.transform.forward * 1.5f);
+            float radius = .5f;
+
+            Gizmos.DrawWireSphere(p1, radius);
+            Gizmos.DrawWireSphere(p2, radius);
+
+            Vector3 up = ToolCamera.transform.up * radius;
+            Vector3 right = ToolCamera.transform.right * radius;
+
+            Gizmos.DrawLine(p1 + up, p2 + up);
+            Gizmos.DrawLine(p1 - up, p2 - up);
+            Gizmos.DrawLine(p1 + right, p2 + right);
+            Gizmos.DrawLine(p1 - right, p2 - right);
+
         }
 
     }

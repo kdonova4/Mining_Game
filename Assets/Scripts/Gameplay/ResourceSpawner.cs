@@ -6,7 +6,7 @@ public class ResourceSpawner : MonoBehaviour
     [Tooltip("Spawn Point")]
     public SphereCollider SpawnPoint;
 
-    [Tooltip("Spawn Resource")]
+    [Tooltip("Spawn Ore")]
     public GameObject SpawnObject;
 
     [Tooltip("Self Spawn Mode")]
@@ -37,7 +37,7 @@ public class ResourceSpawner : MonoBehaviour
     }
 
 
-    public void SpawnResource(int amount)
+    public void SpawnOre(int amount)
     {
         Vector3 randomPoint = Random.insideUnitSphere;
 

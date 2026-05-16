@@ -30,6 +30,7 @@ namespace Dono.MiningGame.Gameplay
         private InputAction m_CrouchAction;
         private InputAction m_ReloadAction;
         private InputAction m_NextWeaponAction;
+        private InputAction m_GravPushAction;
 
         // Start is called once before the first execution of Update after the MonoBehaviour is created
         void Start()
@@ -50,6 +51,7 @@ namespace Dono.MiningGame.Gameplay
             m_CrouchAction = InputSystem.actions.FindAction("Player/Crouch");
             m_ReloadAction = InputSystem.actions.FindAction("Player/Reload");
             m_NextWeaponAction = InputSystem.actions.FindAction("Player/NextWeapon");
+            m_GravPushAction = InputSystem.actions.FindAction("Player/GravPush");
 
             m_MoveAction.Enable();
             m_LookAction.Enable();
@@ -60,6 +62,7 @@ namespace Dono.MiningGame.Gameplay
             m_CrouchAction.Enable();
             m_ReloadAction.Enable();
             m_NextWeaponAction.Enable();
+            m_GravPushAction.Enable();
         }
 
         void LateUpdate()
@@ -193,6 +196,36 @@ namespace Dono.MiningGame.Gameplay
             if (CanProcessInput())
             {
                 return m_CrouchAction.WasReleasedThisFrame();
+            }
+
+            return false;
+        }
+
+        public bool GetGravPushInputDown()
+        {
+            if(CanProcessInput())
+            {
+                return m_GravPushAction.WasPressedThisFrame();
+            }
+
+            return false;
+        }
+
+        public bool GetGravPushInputReleased()
+        {
+            if(CanProcessInput())
+            {
+                return m_GravPushAction.WasReleasedThisFrame();
+            }
+
+            return false;
+        }
+
+        public bool GetGravPushHeld()
+        {
+            if(CanProcessInput())
+            {
+                return m_GravPushAction.IsPressed();
             }
 
             return false;

@@ -55,7 +55,7 @@ public class PlayerMine : MonoBehaviour
             {
                 //Debug.Log("HIT RESOURCE");
                 int amountMined = MiningManager.MineResult();
-                resourceSpawner.SpawnResource(amountMined);
+                resourceSpawner.SpawnOre(amountMined);
             }
             else
             {
